@@ -21,6 +21,9 @@ const keysPressed = {
   d: false,
 };
 
+const worker = new SharedWorker("shared-worker.js");
+worker.port.start();
+
 function setupArena() {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, arenaWidth, arenaHeight);
@@ -75,22 +78,27 @@ function updatePosition() {
   }
 
   if (dx !== 0 || dy !== 0) {
-    const movementLog = {
-      type: "move",
-      user: userId,
-      direction: {
-        x: dx !== 0 ? dx / Math.abs(dx) : 0,
-        y: dy !== 0 ? dy / Math.abs(dy) : 0,
-      },
-    };
-    console.log(JSON.stringify(movementLog));
+    sendMovement({ x: dx, y: dy });
   }
+}
+
+function sendMovement(direction) {
+  worker.port.postMessage({
+    type: "move",
+    user: userId,
+    direction: direction,
+  });
 }
 
 function handleKeyDown(event) {
   const key = event.key.toLowerCase();
   if (keysPressed[key] !== undefined) {
     keysPressed[key] = true;
+
+    sendMovement({
+      x: keysPressed.d - keysPressed.a,
+      y: keysPressed.s - keysPressed.w,
+    });
   }
 }
 
@@ -113,5 +121,13 @@ function init() {
   document.addEventListener("keyup", handleKeyUp);
   gameLoop();
 }
+
+worker.port.onmessage = function (event) {
+  const data = JSON.parse(event.data);
+
+  if (data.type === "move" && data.user !== userId) {
+    console.log("Received movement from other user:", data);
+  }
+};
 
 init();
