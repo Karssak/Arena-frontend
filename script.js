@@ -4,15 +4,29 @@ const ctx = canvas.getContext("2d");
 const arenaWidth = canvas.width;
 const arenaHeight = canvas.height;
 
-const circle = {
+const player = {
   x: Math.floor(Math.random() * (arenaWidth - 2 * 20)) + 20,
   y: Math.floor(Math.random() * (arenaHeight - 2 * 20)) + 20,
-  radius: 20,
+  size: 20,
   color: "#3498db",
   speed: 2,
 };
 
-const userId = "asdfjahsdfhiqewrqwer";
+const bots = [];
+const numBots = 20;
+const botSize = 20;
+
+for (let i = 0; i < numBots; i++) {
+  bots.push({
+    x: Math.floor(Math.random() * (arenaWidth - botSize)),
+    y: Math.floor(Math.random() * (arenaHeight - botSize)),
+    size: botSize,
+    color: getRandomColor(),
+    speed: Math.random() * 2 + 1,
+    dx: Math.random() < 0.5 ? 1 : -1,
+    dy: Math.random() < 0.5 ? 1 : -1,
+  });
+}
 
 const keysPressed = {
   w: false,
@@ -45,47 +59,111 @@ function drawGrid(cellSize = 50) {
   }
 }
 
-function drawCircle() {
-  ctx.fillStyle = circle.color;
-  ctx.beginPath();
-  ctx.arc(circle.x, circle.y, circle.radius, 0, Math.PI * 2);
-  ctx.fill();
+function drawPlayer() {
+  ctx.fillStyle = player.color;
+  ctx.fillRect(
+    player.x - player.size / 2,
+    player.y - player.size / 2,
+    player.size,
+    player.size
+  );
+}
+
+function drawBots() {
+  bots.forEach((bot) => {
+    ctx.fillStyle = bot.color;
+    ctx.fillRect(
+      bot.x - bot.size / 2,
+      bot.y - bot.size / 2,
+      bot.size,
+      bot.size
+    );
+  });
 }
 
 function render() {
   setupArena();
   drawGrid();
-  drawCircle();
+  drawPlayer();
+  drawBots();
 }
 
 function updatePosition() {
   let dx = 0;
   let dy = 0;
 
-  if (keysPressed.w) dy = -circle.speed;
-  if (keysPressed.a) dx = -circle.speed;
-  if (keysPressed.s) dy = circle.speed;
-  if (keysPressed.d) dx = circle.speed;
+  if (keysPressed.w) dy = -player.speed;
+  if (keysPressed.a) dx = -player.speed;
+  if (keysPressed.s) dy = player.speed;
+  if (keysPressed.d) dx = player.speed;
 
-  const newX = circle.x + dx;
-  const newY = circle.y + dy;
+  const newX = player.x + dx;
+  const newY = player.y + dy;
 
-  if (newX - circle.radius >= 0 && newX + circle.radius <= arenaWidth) {
-    circle.x = newX;
+  if (newX - player.size / 2 >= 0 && newX + player.size / 2 <= arenaWidth) {
+    player.x = newX;
   }
-  if (newY - circle.radius >= 0 && newY + circle.radius <= arenaHeight) {
-    circle.y = newY;
+  if (newY - player.size / 2 >= 0 && newY + player.size / 2 <= arenaHeight) {
+    player.y = newY;
   }
+
+  bots.forEach((bot) => {
+    if (checkCollision(player, bot)) {
+      player.x -= dx;
+      player.y -= dy;
+    }
+  });
 
   if (dx !== 0 || dy !== 0) {
     sendMovement({ x: dx, y: dy });
   }
+
+  bots.forEach((bot) => {
+    bot.x += bot.dx * bot.speed;
+    bot.y += bot.dy * bot.speed;
+
+    if (bot.x <= bot.size / 2 || bot.x >= arenaWidth - bot.size / 2)
+      bot.dx *= -1;
+    if (bot.y <= bot.size / 2 || bot.y >= arenaHeight - bot.size / 2)
+      bot.dy *= -1;
+
+    bots.forEach((otherBot) => {
+      if (bot !== otherBot && checkCollision(bot, otherBot)) {
+        resolveCollision(bot, otherBot);
+      }
+    });
+  });
+}
+
+function checkCollision(entity1, entity2) {
+  const dx = entity1.x - entity2.x;
+  const dy = entity1.y - entity2.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  return distance < entity1.size / 2 + entity2.size / 2;
+}
+
+function resolveCollision(bot1, bot2) {
+  bot1.dx *= -1;
+  bot1.dy *= -1;
+  bot2.dx *= -1;
+  bot2.dy *= -1;
+
+  const overlapX = bot1.x - bot2.x;
+  const overlapY = bot1.y - bot2.y;
+  const overlapDist = Math.sqrt(overlapX * overlapX + overlapY * overlapY);
+  const overlap = bot1.size / 2 + bot2.size / 2 - overlapDist;
+
+  const angle = Math.atan2(overlapY, overlapX);
+  bot1.x += (Math.cos(angle) * overlap) / 2;
+  bot1.y += (Math.sin(angle) * overlap) / 2;
+  bot2.x -= (Math.cos(angle) * overlap) / 2;
+  bot2.y -= (Math.sin(angle) * overlap) / 2;
 }
 
 function sendMovement(direction) {
   worker.port.postMessage({
     type: "move",
-    user: userId,
+    user: "player",
     direction: direction,
   });
 }
@@ -109,6 +187,10 @@ function handleKeyUp(event) {
   }
 }
 
+function getRandomColor() {
+  return `hsl(${Math.floor(Math.random() * 360)}, 70%, 60%)`;
+}
+
 function gameLoop() {
   updatePosition();
   render();
@@ -125,7 +207,7 @@ function init() {
 worker.port.onmessage = function (event) {
   const data = JSON.parse(event.data);
 
-  if (data.type === "move" && data.user !== userId) {
+  if (data.type === "move" && data.user !== "player") {
     console.log("Received movement from other user:", data);
   }
 };
